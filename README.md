@@ -1,3 +1,11 @@
+I merged this into my existing [home-server-ops project](https://github.com/jackaI1/home-server-ops/tree/main/projects/ip-routing-daemon). The current code is in `projects/ip-routing-daemon/` there. I kept the code here so older links still work.
+
+The move keeps the original layout, including `router_sim.py`, `lab/netns.py`, `lab/topology.py`, `tests/core.cpp`. I replaced the README with the report below and left out Git history, installed dependencies, caches and generated build output from the hub copy.
+
+The project checks are configured in the hub at `.github/workflows/ip-routing-daemon-report.yml`, `.github/workflows/ip-routing-daemon-ci.yml`, `.github/workflows/ip-routing-daemon-cpp-router.yml`, with commands run from this project folder and changes filtered to its paths.
+
+---
+
 # ip-routing-daemon
 
 I built a small IP router to learn how the underlying idea works. This is a learning project.
@@ -57,5 +65,3 @@ There are 7 test source files in this copy. No test pass count is claimed here: 
 
 
 Project checks run from this directory through the path-filtered hub workflows: `ip-routing-daemon-report.yml`, `ip-routing-daemon-ci.yml`, `ip-routing-daemon-cpp-router.yml`.
-
-I later merged this into my [home-server-ops](https://github.com/jackaI1/home-server-ops) project, and the current version and more detail are at [this project](https://github.com/jackaI1/home-server-ops/tree/main/projects/ip-routing-daemon).
