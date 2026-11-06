@@ -31,7 +31,7 @@ class ReportPipelineTests(unittest.TestCase):
     def test_independent_files_and_csv_round_trip(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
-            logs = [root / 'a,"run".jsonl', root / 'b.jsonl']
+            logs = [root / 'a,"café".jsonl', root / 'b.jsonl']
             events = [dict(event='link_failure', t_ms=0, failure_id='f1', link='A-B'),
                       dict(event='packet_drop', t_ms=1, node='A', reason='bad,"quoted"'),
                       dict(event='routes_converged', t_ms=5, failure_id='f1')]

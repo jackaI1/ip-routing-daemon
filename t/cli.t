@@ -67,4 +67,26 @@ chdir $tmp or die $!;
 chdir $cwd or die $!;
 is($status, 0, 'works outside repository');
 
+SKIP: {
+    open my $probe, '>', "$tmp/CaseProbe" or die $!;
+    close $probe;
+    skip 'filesystem is case-sensitive', 2 unless -e "$tmp/caseprobe";
+    ($status) = run_cli('--text', "$tmp/NewReport", '--csv', "$tmp/newreport", $fixture);
+    is($status, 1, 'case-insensitive output alias rejected');
+    ok(!-e "$tmp/NewReport", 'failed reservation leaves no output placeholder');
+}
+SKIP: {
+    my $composed = "$tmp/caf\xc3\xa9";
+    my $decomposed = "$tmp/cafe\xcc\x81";
+    open my $probe, '>', "${composed}Probe" or die $!;
+    close $probe;
+    skip 'filesystem is normalization-sensitive', 2 unless -e "${decomposed}Probe";
+    ($status) = run_cli('--text', $composed, '--csv', $decomposed, $fixture);
+    is($status, 1, 'Unicode-normalization output alias rejected');
+    ok(!-e $composed, 'normalization collision leaves no placeholder');
+}
+($status) = run_cli('--text', "$tmp/reserved", '--csv', "$tmp/absent/out", $fixture);
+is($status, 1, 'second output error fails cleanly');
+ok(!-e "$tmp/reserved", 'second output failure releases owned first reservation');
+
 done_testing();

@@ -84,6 +84,6 @@ prove -l t
 python3 -m unittest discover -s tests -v
 ```
 
-I have 90 Test::More checks for parsing, damaged input, report output, CSV escaping, and command-line errors, plus 12 Python tests for routing and the complete producer-to-report pipeline. The pipeline reads the CSV independently with Python's CSV parser and checks both measured times and packet counts.
+I have 96 Test::More checks for parsing, damaged input, report output, CSV escaping, and command-line errors, plus 12 Python tests for routing and the complete producer-to-report pipeline. The pipeline reads the CSV independently with Python's CSV parser and checks both measured times and packet counts.
 
 GitHub Actions runs both suites on Linux and macOS for pull requests and pushes to main. It also generates the demo, runs the Perl report with `--strict`, and saves the event log and reports as downloadable artifacts.

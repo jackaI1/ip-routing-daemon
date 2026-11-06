@@ -9,6 +9,18 @@ use Cwd qw(abs_path);
 use File::Basename qw(dirname basename);
 use File::Spec;
 use File::Temp qw(tempfile);
+use Fcntl qw(O_WRONLY O_CREAT O_EXCL);
+use Encode qw(decode);
+
+my @reservations;
+END {
+    # Only unlink placeholders that still have the inode this invocation created.
+    for my $owned (@reservations) {
+        my @current = stat($owned->[0]);
+        next unless @current && $current[0] == $owned->[1] && $current[1] == $owned->[2];
+        unlink $owned->[0] or warn "Cannot release output reservation $owned->[0]: $!\n";
+    }
+}
 
 sub usage {
     return <<'HELP';
@@ -50,11 +62,19 @@ sub main {
         open my $input, '<:raw', $path or die "Cannot open $path: $!\n";
         my $id = identity($path);
         die "Duplicate input: $path\n" if $input_ids{$id}++;
-        push @runs, read_log($input, $path);
+        push @runs, read_log($input, decode('UTF-8', $path));
         close $input or die "Cannot close $path: $!\n";
     }
     my %output_ids;
     for my $path ($text_path, $csv_path) {
+        if (!-e $path && !-l $path) {
+            # Let the filesystem resolve case and Unicode-normalization aliases.
+            sysopen my $reserved, $path, O_WRONLY | O_CREAT | O_EXCL, 0600
+                or die "Cannot reserve output $path: $!\n";
+            my @metadata = stat($reserved);
+            push @reservations, [$path, @metadata[0, 1]];
+            close $reserved or die "Cannot close reservation $path: $!\n";
+        }
         my $id = identity($path);
         die "Output overlaps input or another output: $path\n" if $input_ids{$id} || $output_ids{$id}++;
     }
