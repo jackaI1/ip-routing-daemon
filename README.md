@@ -1,89 +1,70 @@
-# IP routing lab
+# My small IP router
 
-I built a small network routing lab because I wanted to understand why packets can disappear after a connection breaks, even when another path exists. My routers pass updates to their neighbors, choose paths, and forward packets. I use a report to see how long they take to agree on the new paths and why packets were lost along the way.
+I built a small IP router because I wanted to see how a network finds another way through when a cable stops working. I can send traffic between two computers in a Linux lab, break a connection in the middle, and watch the routers choose another path without changing any routes by hand.
 
-This runs entirely on my computer as a simulation. It does not change my computer's network settings or need router hardware.
+The lab runs on one Linux machine. It creates six isolated network environments: two end computers and four routers. My C++ program carries the packets between routers and shares updates about which connections are alive. When the shorter path fails, traffic moves to the other side of the network.
 
-## Try it
-
-From a checkout of this repository, with Python 3.9 or newer and Perl 5.20 or newer:
+To try it on Ubuntu 24.04 or a Linux VM:
 
 ```sh
-mkdir -p reports
-python3 router_sim.py --log reports/demo.jsonl
-perl tools/routing-report.pl --text reports/summary.txt --csv reports/summary.csv reports/demo.jsonl
-cat reports/summary.txt
+sudo apt-get update
+sudo apt-get install -y g++ make python3-venv iproute2 iputils-ping
+git clone https://github.com/jackaI1/ip-routing-daemon.git
+cd ip-routing-daemon
+make -j2
+sudo python3 lab/topology.py
 ```
 
-I get a readable text report and a CSV file I can open in a spreadsheet. Both programs use libraries included with their language, so there are no packages to install. The output folder must already exist.
+The demo pings before failure, takes down the connection between routers 2 and 4, pings through router 3, restores the connection, and pings again. It prints the time taken to change paths. It removes its four router processes and six network environments on exit; logs stay in `build/lab/`. It needs root to create the isolated network, so I run it in a disposable VM or a CI runner. macOS can run the core tests, but the network demo needs Linux.
 
-## What I look for in the report
-
-The demo starts with two paths from router A to router D:
+## What happens to a packet
 
 ```text
-A -- B -- D
-|         |
-C -- E ---+
+                 r2
+               /    \
+computer A -- r1      r4 -- computer B
+               \    /
+                 r3
+
+A: 10.1.0.2                  B: 10.4.0.2
+r1-r2-r4: cost 2             r1-r3-r4: cost 4
 ```
 
-First, I break B-D. A briefly sends traffic toward B using an old path, while B already knows the link is gone. They send the packet back toward each other, which the simulation detects as a forwarding loop. After the updates travel, A uses A-C-E-D instead. Then I break A-C, separating the network into two pieces.
+Each router advertises the networks attached to it. It also sends a small greeting to each neighbour every quarter second. If greetings stop for 1.25 seconds, it announces the missing connection. The routers share those announcements and calculate new paths.
 
-The link-failure part of the report shows:
+When traffic arrives, my program uses **longest-prefix match**: it chooses the most specific matching address range. A route for `10.4.0.0/24` covers fewer addresses than `10.4.0.0/16`, so it wins even if it costs more. The lab deliberately includes both ranges to check this with actual pings. Among paths to the same range, the router chooses the lowest total cost.
 
-```text
-failure-1 [B-D] at 0 ms: 10 ms
-failure-2 [A-C] at 10 ms: 20 ms
-```
-
-**Convergence** means every router's table has settled on the correct paths for the surviving network. The report subtracts the failure time from the matching convergence time. These are simulated milliseconds: each update step is 10 ms, not a measurement of physical router speed. The second failure still converges, but A can no longer reach D. Agreement about an unreachable destination is a correct result too.
-
-The demo also reports one packet for each of these reasons:
-
-| Category / reason | What happened |
-| --- | --- |
-| `packet_drop / forwarding_loop` | Routers briefly disagreed and tried to send a packet back to a router it had already visited. |
-| `packet_drop / ttl_expired` | A packet ran out of its allowed number of hops. A hop is one trip between neighboring routers. |
-| `packet_drop / no_route` | The sender had no path to the destination after the network split. |
-| `malformed_packet / unknown_destination` | I deliberately sent a packet to a destination outside the network. |
-
-I also record four scenario checks, such as whether the alternate path actually delivered a packet. Their `pass` or `fail` results appear in both reports. They are separate from the automated test suite.
-
-## Report other runs
-
-The reporter reads JSON Lines: one event per line. It accepts several files, keeping each run's times and failure IDs separate:
+## Running the tests
 
 ```sh
-perl tools/routing-report.pl --strict \
-  --text reports/combined.txt --csv reports/combined.csv \
-  reports/demo.jsonl t/fixtures/mixed.jsonl
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+make -j2
+.venv/bin/python -m pytest -q -m 'not integration'
+sudo .venv/bin/python -m pytest -v -s
+
+# Rebuild everything with memory and undefined-behaviour checks.
+make clean
+make -j2 SANITIZE=1
+sudo env ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 \
+  UBSAN_OPTIONS=halt_on_error=1 .venv/bin/python -m pytest -v -s
 ```
 
-That command writes both reports and exits with status **2**, because the mixed fixture deliberately contains a failed check, an unfinished recovery, and damaged lines. Without `--strict`, it writes the same report and exits with status 0. Status 1 means a command-line or file error.
+The network tests check traffic in both directions, large fragmented packets, link failure and restoration, a partition with no remaining path, a stopped router, malformed traffic, and cleanup after a startup failure. `failure convergence: ...s` reports how long it took to observe the alternate routes; the test requires less than eight seconds. On macOS, `make` builds the portable C++ core and pytest skips Linux-only cases.
 
-An unfinished recovery is labelled `incomplete`, with an empty duration in CSV. A damaged log line is counted under rejected lines, with its reason and line number. It never counts as a malformed packet: one describes a broken log record, the other describes a packet the router rejected. The report keeps up to 20 diagnostic examples and counts every rejected line. A complete final JSON record works without a final newline; a truncated record is rejected.
+## How I put it together
 
-The CSV has a `record_type` column: `summary`, `convergence`, `packet`, `test`, `rejected`, or `diagnostic`. I filter on `convergence` to compare recovery times, or `packet` to group losses by `category` and `reason`. Each row carries its input `source`. Blank cells mean that field does not apply. Formula-like text is prefixed with an apostrophe so opening an untrusted log in a spreadsheet does not execute it.
+- `src/router.cpp` contains address matching, shortest-path calculation, protocol encoding and IPv4 validation.
+- `src/main.cpp` is the Linux daemon. It owns a virtual network adapter, exchanges UDP messages, detects failed neighbours and forwards packets.
+- `lab/topology.py` builds and removes the network. It also records the exact router PIDs, start times and namespace-local ports in `resources.json`.
+- `tests/` checks the C++ core, configuration handling and real network traffic with pytest.
 
-## How the routing part works
+A **network namespace** is a separate Linux network stack with its own interfaces and route table. A **TUN adapter** passes IP packets between Linux and a program. I use TUN to get host traffic into my daemon, then wrap each packet in UDP to send it over a direct router connection. At intermediate routers, C++ selects the next neighbour. Linux has no remote host routes that can bypass that decision. At the destination router, the daemon puts the packet back into TUN and Linux delivers it to the attached computer.
 
-Each router starts with the same topology, meaning the list of connections. When a link fails, its two endpoints learn immediately. They send a link-state update, a message describing the broken connection, to their neighbors. Each step moves updates one hop farther. Each router independently uses breadth-first search to find shortest paths in its current view, with every connection costing one hop.
+The control protocol is a small custom **link-state protocol**: routers flood descriptions of their connections and run Dijkstra's shortest-path algorithm over the resulting map. It uses sequence numbers to reject duplicate updates, expiry to discard missing routers, and reciprocal links to avoid trusting stale, one-sided connections. It is not OSPF and does not interoperate with commercial routers.
 
-Packets follow those local tables rather than a prewritten route. A separate observer compares every table with shortest paths in the actual remaining network before recording `routes_converged`. If failures overlap, that event means the tables agree with the network after all failures seen so far. Each failure keeps its own start time and ID.
+I kept this an IPv4 lab router. It validates packet lengths and header checksums, reduces the packet lifetime counter, and forwards fragments without reassembling them. It drops expired packets and missing routes with logged reasons; it does not generate ICMP error replies. The UDP protocol has no authentication or encryption and belongs only on a trusted, isolated lab network. More details, configuration examples and timing limits are in [the design notes](docs/design.md).
 
-I can change the links with the `Network` class in `router_sim.py`, call `fail_link`, send probes with `send`, and advance time with `tick` or `settle`. The built-in demo is fixed so I can reproduce a report exactly. It models link failures, not restored links or a complete Internet routing protocol. It is a routing experiment, not a daemon that installs operating-system routes.
+## CI and test coverage
 
-The Perl reporter uses `strict` and `warnings`. I separated parsing and report formatting into `lib/Routing/Report.pm`; `tools/routing-report.pl` handles arguments and files. It validates event fields and timestamps, rejects duplicate or unmatched failure IDs, and checks that accepted events stay in time order. It reads in bounded chunks and rejects records larger than 64 KiB. Output paths cannot overwrite input logs, including their symlink or hardlink aliases.
-
-The [event format](docs/event-format.md) explains how another router or test runner can produce compatible logs. Missing records can hide losses or make a duration unreliable; a report describes the events it received, not evidence that every packet was logged.
-
-## Tests and CI
-
-```sh
-prove -l t
-python3 -m unittest discover -s tests -v
-```
-
-I have 96 Test::More checks for parsing, damaged input, report output, CSV escaping, and command-line errors, plus 12 Python tests for routing and the complete producer-to-report pipeline. The pipeline reads the CSV independently with Python's CSV parser and checks both measured times and packet counts.
-
-GitHub Actions runs both suites on Linux and macOS for pull requests and pushes to main. It also generates the demo, runs the Perl report with `--strict`, and saves the event log and reports as downloadable artifacts.
+[Router CI](https://github.com/jackaI1/ip-routing-daemon/actions/workflows/ci.yml) runs on pull requests and on `main`. Each Ubuntu job builds the daemon, runs all 26 pytest cases, runs the README demo, and checks that no lab namespaces or daemons remain. One job uses the normal build; the other enables AddressSanitizer and UndefinedBehaviorSanitizer, including leak detection on graceful shutdown. The parser stress test uses 20,000 seeded random messages plus 20,000 mutations of valid messages per build. CI saves the test report, router logs, route snapshots and cleanup records as downloadable artifacts.
