@@ -1,0 +1,13 @@
+{"event":"link_failure","t_ms":100,"failure_id":"f1","link":"B-D"}
+{"event":"packet_drop","t_ms":110,"node":"A","reason":"no_route"}
+{"event":"packet_drop","t_ms":111,"node":"A","reason":"no_route"}
+{"event":"malformed_packet","t_ms":115,"node":"B","reason":"bad_header"}
+{"event":"routes_converged","t_ms":135,"failure_id":"f1"}
+{"event":"link_failure","t_ms":140,"failure_id":"f2","link":"A-C"}
+{"event":"routes_converged","t_ms":150,"failure_id":"f2"}
+{"event":"packet_delivered","t_ms":151,"node":"D"}
+{"event":"link_failure","t_ms":160,"failure_id":"f3","link":"C-E"}
+{"event":"test_result","t_ms":161,"name":"alternate_path","status":"pass"}
+{"event":"test_result","t_ms":162,"name":"lost_probe","status":"fail"}
+this is corrupt
+{"event":"packet_drop","t_ms":
