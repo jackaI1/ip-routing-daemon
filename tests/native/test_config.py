@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.skipif(sys.platform != "linux", reason="routerd is Linux-only")
 BASE = "router 1\ntun rt0\nstatus /tmp/router-status.json\nprefix 10.1.0.0/24\npeer 2 172.16.12.2 1\n"
 

@@ -1,4 +1,5 @@
 """Real ICMP crosses the C++ data plane; Linux has no remote host routes."""
+import csv
 import importlib.util
 import json
 import os
@@ -10,7 +11,7 @@ import time
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 spec = importlib.util.spec_from_file_location("topology", ROOT / "lab/topology.py")
 topology = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(topology)
@@ -44,9 +45,10 @@ def test_bidirectional_lpm_and_fragmentation(lab):
 def test_link_failure_and_restoration(lab, record_property):
     lab.ping()
     started = time.monotonic()
+    failure_id = lab.failure(2, 4)
     lab.link(2, 4, "down")
-    topology.wait_for(lambda: lab.route(1, "10.4.0.0/24", 3) and lab.route(4, "10.1.0.0/24", 3),
-                      timeout=8, description="reroute in both directions")
+    topology.wait_for(lab.routes_agree, timeout=8, description="all routers agree after failure")
+    lab.converged(failure_id)
     elapsed = time.monotonic() - started
     record_property("convergence_seconds", round(elapsed, 3))
     print(f"failure convergence: {elapsed:.3f}s", flush=True)
@@ -59,6 +61,16 @@ def test_link_failure_and_restoration(lab, record_property):
     topology.wait_for(lambda: lab.route(1, "10.4.0.0/24", 2) and lab.route(4, "10.1.0.0/24", 2),
                       description="restored shortest paths")
     lab.ping()
+    report = lab.output / "report.csv"
+    subprocess.run(["perl", str(ROOT / "tools/routing-report.pl"), "--strict", "--text",
+                    str(lab.output / "report.txt"), "--csv", str(report), str(lab.output / "events.jsonl")],
+                   check=True, capture_output=True, timeout=10)
+    with report.open() as stream:
+        rows = list(csv.DictReader(stream))
+    convergence = [r for r in rows if r["record_type"] == "convergence"]
+    assert len(convergence) == 1 and convergence[0]["link"] == "r2-r4"
+    assert 0 < int(convergence[0]["convergence_ms"]) < 8000
+    assert len([r for r in rows if r["record_type"] == "test"]) == 4
 
 
 def test_partition_withdraws_routes(lab):

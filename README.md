@@ -52,6 +52,25 @@ sudo env ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 \
 
 The network tests check traffic in both directions, large fragmented packets, link failure and restoration, a partition with no remaining path, a stopped router, malformed traffic, and cleanup after a startup failure. `failure convergence: ...s` reports how long it took to observe the alternate routes; the test requires less than eight seconds. On macOS, `make` builds the portable C++ core and pytest skips Linux-only cases.
 
+## Reading the recovery report
+
+I also keep a small simulator for quick experiments without root access. Its Perl reporter works with both the simulated experiment and the live lab's observation stream:
+
+```sh
+# Report the live demo I just ran.
+perl tools/routing-report.pl --strict --text build/lab/summary.txt \
+  --csv build/lab/summary.csv build/lab/events.jsonl
+cat build/lab/summary.txt
+
+# Run the original simulation without changing any network settings.
+mkdir -p reports
+python3 router_sim.py --log reports/demo.jsonl
+perl tools/routing-report.pl --strict --text reports/summary.txt \
+  --csv reports/summary.csv reports/demo.jsonl
+```
+
+The live report shows the measured time from breaking a link until every router's routes match an independent calculation of the surviving network. It also lists the ping checks and delivered probes. The simulator uses a deterministic clock, so its times describe simulation steps rather than real recovery speed. I kept [the simulation and reporting walkthrough](docs/simulation-report.md), including damaged-log handling, CSV columns and exit codes. The [event format](docs/event-format.md) describes compatible input. The daemon's individual `r*.log` files are debug logs; I pass the lab's `events.jsonl` to the reporter.
+
 ## How I put it together
 
 - `src/router.cpp` contains address matching, shortest-path calculation, protocol encoding and IPv4 validation.
@@ -67,4 +86,6 @@ I kept this an IPv4 lab router. It validates packet lengths and header checksums
 
 ## CI and test coverage
 
-[Router CI](https://github.com/jackaI1/ip-routing-daemon/actions/workflows/ci.yml) runs on pull requests and on `main`. Each Ubuntu job builds the daemon, runs all 26 pytest cases, runs the README demo, and checks that no lab namespaces or daemons remain. One job uses the normal build; the other enables AddressSanitizer and UndefinedBehaviorSanitizer, including leak detection on graceful shutdown. The parser stress test uses 20,000 seeded random messages plus 20,000 mutations of valid messages per build. CI saves the test report, router logs, route snapshots and cleanup records as downloadable artifacts.
+[Router CI](https://github.com/jackaI1/ip-routing-daemon/actions/workflows/ci.yml) runs on pull requests and on `main`. Each Ubuntu job builds the daemon, runs all 38 pytest cases (26 daemon/core cases and 12 existing simulator/report cases), runs the README demo, and checks that no lab namespaces or daemons remain. One job uses the normal build; the other enables AddressSanitizer and UndefinedBehaviorSanitizer, including leak detection on graceful shutdown. The parser stress test uses 20,000 seeded random messages plus 20,000 mutations of valid messages per build. CI saves the test report, router logs, route snapshots, live recovery reports and cleanup records as downloadable artifacts.
+
+The existing reporting workflow also runs `prove -l t` (96 Perl checks) and `python3 -m unittest discover -s tests -v` (12 simulator/report tests) on Linux and macOS. The pytest cases are under `tests/native/` so the original unittest command still works without installing pytest.

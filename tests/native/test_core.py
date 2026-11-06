@@ -3,7 +3,7 @@ import subprocess
 from pathlib import Path
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.mark.parametrize("case", ["prefixes", "lpm", "paths", "failure", "ties", "wire", "ipv4", "options_fragments", "fuzz"])
 def test_core(case):
