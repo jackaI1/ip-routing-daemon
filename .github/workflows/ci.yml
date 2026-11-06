@@ -1,41 +1,63 @@
-name: Routing tests
-
+name: Router CI
 on:
   push:
     branches: [main]
   pull_request:
-
 permissions:
   contents: read
-
 jobs:
-  tests:
-    name: Router and Perl report (${{ matrix.os }})
-    runs-on: ${{ matrix.os }}
+  linux:
+    name: Linux namespaces (sanitizers=${{ matrix.sanitize }})
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        sanitize: [0, 1]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
-      - name: Check Perl syntax
+          python-version: '3.12'
+      - name: Install test tools
         run: |
-          perl -Ilib -c lib/Routing/Report.pm
-          perl -c tools/routing-report.pl
-      - name: Test parser and command line with Test::More
-        run: prove -lv t
-      - name: Test routing and report pipeline
-        run: python3 -m unittest discover -s tests -v
-      - name: Generate and report a routing experiment
+          sudo apt-get update -qq
+          sudo apt-get install -y iproute2 iputils-ping
+          python -m pip install -r requirements-dev.txt
+      - name: Build C++20 daemon and core tests
+        run: make -j2 SANITIZE=${{ matrix.sanitize }} CXX=g++
+      - name: Run all tests, including actual namespace traffic
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+          UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
         run: |
-          mkdir -p reports
-          python3 router_sim.py --log reports/demo.jsonl
-          perl tools/routing-report.pl --strict --text reports/summary.txt --csv reports/summary.csv reports/demo.jsonl
-          cat reports/summary.txt
+          sudo env PATH="$PATH" ASAN_OPTIONS="$ASAN_OPTIONS" UBSAN_OPTIONS="$UBSAN_OPTIONS" \
+            python -m pytest -v -s --junitxml=build/results.xml --basetemp=build/test-artifacts
+      - name: Run the documented failure demo
+        run: |
+          sudo env ASAN_OPTIONS=detect_leaks=1:abort_on_error=1 UBSAN_OPTIONS=halt_on_error=1 python lab/topology.py --output build/demo
+          perl tools/routing-report.pl --strict --text build/live-summary.txt --csv build/live-summary.csv build/demo/events.jsonl
+      - name: Verify no lab namespaces or router processes remain
+        if: always()
+        run: |
+          test -z "$(ip netns list | awk '/^jr[0-9a-f]+-/ {print $1}')"
+          if pgrep -x routerd; then exit 1; fi
+      - name: Return generated reports to the runner account
+        if: always()
+        run: |
+          if [ -d build ]; then
+            sudo chown -R "$(id -u):$(id -g)" build
+          fi
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
-          name: routing-report-${{ matrix.os }}
-          path: reports/
+          name: router-results-sanitizers-${{ matrix.sanitize }}
+          path: |
+            build/results.xml
+            build/live-summary.*
+            build/test-artifacts/**/r*.log
+            build/test-artifacts/**/r*.json
+            build/test-artifacts/**/resources.json
+            build/test-artifacts/**/events.jsonl
+            build/test-artifacts/**/report.*
+            build/demo/

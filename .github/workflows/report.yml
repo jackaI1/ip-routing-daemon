@@ -1,0 +1,41 @@
+name: Routing tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Router and Perl report (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Check Perl syntax
+        run: |
+          perl -Ilib -c lib/Routing/Report.pm
+          perl -c tools/routing-report.pl
+      - name: Test parser and command line with Test::More
+        run: prove -lv t
+      - name: Test routing and report pipeline
+        run: python3 -m unittest discover -s tests -v
+      - name: Generate and report a routing experiment
+        run: |
+          mkdir -p reports
+          python3 router_sim.py --log reports/demo.jsonl
+          perl tools/routing-report.pl --strict --text reports/summary.txt --csv reports/summary.csv reports/demo.jsonl
+          cat reports/summary.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: routing-report-${{ matrix.os }}
+          path: reports/
