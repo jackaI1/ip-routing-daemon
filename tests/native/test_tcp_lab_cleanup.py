@@ -43,3 +43,17 @@ def test_process_signal_error_does_not_skip_wait_or_namespace_cleanup(tmp_path):
     process.wait.assert_called_once_with(timeout=3)
     command.assert_any_call('ip', 'netns', 'del', 'owned-1')
     assert json.loads((tmp_path / 'cleanup.json').read_text())['remaining_owned'] == 0
+
+
+def test_failed_link_deletion_still_measures_surviving_owned_link(tmp_path):
+    def command(*args, **kwargs):
+        if args[:3] == ('ip', 'link', 'del'):
+            raise subprocess.CalledProcessError(1, args, stderr='injected failure')
+        return subprocess.CompletedProcess(args, 0, '', '')
+
+    with patch.object(lab, 'run', side_effect=command), patch.object(lab.subprocess, 'run', return_value=subprocess.CompletedProcess([], 0)):
+        with pytest.raises(RuntimeError, match='cleanup'):
+            lab.cleanup_resources([], [], [], ['owned-veth'], tmp_path, 'owned')
+    report = json.loads((tmp_path / 'cleanup.json').read_text())
+    assert report['remaining_links'] == ['owned-veth']
+    assert report['remaining_owned'] == 1

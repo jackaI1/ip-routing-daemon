@@ -47,14 +47,15 @@ def cleanup_resources(processes, handles, created, owned_links, output, tag):
     remaining_links = []
     for name in owned_links:
         # A setup failure can leave a not-yet-moved veth in the root namespace.
-        def clean_link(n=name):
-            shown = subprocess.run(['ip', 'link', 'show', n], capture_output=True, timeout=5)
-            if shown.returncode == 0:
-                run('ip', 'link', 'del', n)
-            shown = subprocess.run(['ip', 'link', 'show', n], capture_output=True, timeout=5)
-            if shown.returncode == 0:
-                remaining_links.append(n)
-        attempt(f'delete setup link {name}', clean_link)
+        shown = attempt(f'inspect setup link {name}', lambda n=name: subprocess.run(
+            ['ip', 'link', 'show', n], capture_output=True, timeout=5))
+        if shown is not None and shown.returncode == 0:
+            attempt(f'delete setup link {name}', lambda n=name: run('ip', 'link', 'del', n))
+        # Verification must run even when deletion failed. Unknown state is conservative.
+        shown = attempt(f'verify setup link {name}', lambda n=name: subprocess.run(
+            ['ip', 'link', 'show', n], capture_output=True, timeout=5))
+        if shown is None or shown.returncode == 0:
+            remaining_links.append(name)
     listed = attempt('verify namespaces', lambda: run('ip', 'netns', 'list'))
     names = {line.split()[0] for line in listed.stdout.splitlines() if line.split()} if listed else set(created)
     remaining_ns = [name for name in created if name in names]
@@ -186,6 +187,8 @@ print(len(payload))
                 ns(i, 'ip', 'link', 'set', 'tun0', 'mtu', '1400', 'up')
                 ns(i, 'ip', 'route', 'add', '10.200.0.0/16', 'dev', 'tun0', 'src', f'10.200.{i}.1')
                 assert ns(i, 'sysctl', '-n', 'net.ipv4.ip_forward').stdout.strip() == '0'
+            checks.append({'check': 'kernel forwarding disabled', 'routers': 4})
+            print('PASS kernel forwarding disabled in all four routers', flush=True)
             server_code = """import socket,hashlib
 with socket.socket() as listener:
  listener.setsockopt(socket.SOL_SOCKET,socket.SO_REUSEADDR,1)
@@ -221,6 +224,7 @@ with socket.socket() as listener:
             tcp_transfer()
             processes[1].send_signal(signal.SIGCONT)
             wait_for('resumed neighbor returns to primary', lambda: route(1, '10.200.4.0/24', 2) and route(4, '10.200.1.0/24', 2))
+            tcp_transfer()
             # Cut both of router 1's links; it must withdraw all remote routes.
             for peer_line in peers[1]:
                 local = peer_line.split()[2]

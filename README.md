@@ -102,4 +102,4 @@ I kept this an IPv4 lab router. It validates packet lengths and header checksums
 
 The existing reporting workflow also runs `prove -l t` (96 Perl checks) and `python3 -m unittest discover -s tests -v` (12 simulator/report tests) on Linux and macOS. The pytest cases are under `tests/native/` so the original unittest command still works without installing pytest.
 
-The TCP lab workflow runs `lab/netns.py` twice and saves its payload checks, route snapshots, recovery times and cleanup records. Two portable failure-injection tests cover errors during cleanup; the full pytest suite now has 40 cases. `make unit` runs the nine C++ core cases directly, and `make test` runs pytest plus the 96 Perl checks.
+The TCP lab workflow runs `lab/netns.py` twice and saves its payload checks, route snapshots, recovery times and cleanup records. Three portable failure-injection tests cover errors during cleanup; the full pytest suite now has 41 cases. `make unit` runs the nine C++ core cases directly, and `make test` runs pytest plus the 96 Perl checks.
