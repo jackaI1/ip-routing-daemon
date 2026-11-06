@@ -17,6 +17,18 @@ sudo python3 lab/topology.py
 
 The demo pings before failure, takes down the connection between routers 2 and 4, pings through router 3, restores the connection, and pings again. It prints the time taken to change paths. It removes its four router processes and six network environments on exit; logs stay in `build/lab/`. It needs root to create the isolated network, so I run it in a disposable VM or a CI runner. macOS can run the core tests, but the network demo needs Linux.
 
+## Check real TCP data after a failure
+
+I also run a four-router lab with the sending and receiving programs inside routers 1 and 4. This version disables Linux kernel forwarding everywhere and checks a 1 MiB TCP payload against its SHA-256 digest, a fingerprint of the received bytes. It tests the preferred path, a broken link, link restoration and a router that stops answering while its interfaces remain up.
+
+```sh
+sudo python3 lab/netns.py
+cat reports/netns/result.json
+cat reports/netns/cleanup.json
+```
+
+The script uses the same C++ router as the first demo. It checks the new next hops and actual delivered bytes, then removes its five processes and four isolated networks. [My TCP lab notes](docs/linux-router.md) explain the topology, Linux container option, recovery measurement and cleanup records. Each phase opens a fresh TCP connection, so this checks recovery rather than uninterrupted sessions.
+
 ## What happens to a packet
 
 ```text
@@ -89,3 +101,5 @@ I kept this an IPv4 lab router. It validates packet lengths and header checksums
 [Router CI](https://github.com/jackaI1/ip-routing-daemon/actions/workflows/ci.yml) runs on pull requests and on `main`. Each Ubuntu job builds the daemon, runs all 38 pytest cases (26 daemon/core cases and 12 existing simulator/report cases), runs the README demo, and checks that no lab namespaces or daemons remain. One job uses the normal build; the other enables AddressSanitizer and UndefinedBehaviorSanitizer, including leak detection on graceful shutdown. The parser stress test uses 20,000 seeded random messages plus 20,000 mutations of valid messages per build. CI saves the test report, router logs, route snapshots, live recovery reports and cleanup records as downloadable artifacts.
 
 The existing reporting workflow also runs `prove -l t` (96 Perl checks) and `python3 -m unittest discover -s tests -v` (12 simulator/report tests) on Linux and macOS. The pytest cases are under `tests/native/` so the original unittest command still works without installing pytest.
+
+The TCP lab workflow runs `lab/netns.py` twice and saves its payload checks, route snapshots, recovery times and cleanup records. Two portable failure-injection tests cover errors during cleanup; the full pytest suite now has 40 cases. `make unit` runs the nine C++ core cases directly, and `make test` runs pytest plus the 96 Perl checks.
