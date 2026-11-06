@@ -1,0 +1,31 @@
+name: TCP failover lab
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  netns:
+    name: Linux namespace packet forwarding
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install lab tools
+        run: sudo apt-get update -qq && sudo apt-get install -y iproute2 iputils-ping
+      - name: Compile daemon and unit tests
+        run: make all unit
+      - name: Route ping and TCP through four real routers
+        run: sudo python3 lab/netns.py
+      - name: Repeat to check resource cleanup and reproducibility
+        run: sudo python3 lab/netns.py --output reports/netns-repeat
+      - name: Show measured recovery and cleanup
+        if: always()
+        run: |
+          find reports -name result.json -o -name cleanup.json | xargs -r -n1 sh -c 'echo "$0"; cat "$0"'
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: linux-router-lab
+          path: reports/
