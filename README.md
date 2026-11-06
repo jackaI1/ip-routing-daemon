@@ -58,9 +58,9 @@ I also keep a small simulator for quick experiments without root access. Its Per
 
 ```sh
 # Report the live demo I just ran.
-perl tools/routing-report.pl --strict --text build/lab/summary.txt \
-  --csv build/lab/summary.csv build/lab/events.jsonl
-cat build/lab/summary.txt
+perl tools/routing-report.pl --strict --text build/live-summary.txt \
+  --csv build/live-summary.csv build/lab/events.jsonl
+cat build/live-summary.txt
 
 # Run the original simulation without changing any network settings.
 mkdir -p reports
