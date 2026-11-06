@@ -122,3 +122,4 @@ def test_partial_start_failure_cleans_resources(tmp_path):
     assert all(p.poll() is not None for p in lab.processes)
     names = subprocess.run(["ip", "netns", "list"], check=True, text=True, capture_output=True).stdout
     assert lab.tag not in names
+    assert json.loads((lab.output / "resources.json").read_text())["cleaned"]

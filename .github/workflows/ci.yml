@@ -40,6 +40,12 @@ jobs:
         run: |
           test -z "$(ip netns list | awk '/^jr[0-9a-f]+-/ {print $1}')"
           if pgrep -x routerd; then exit 1; fi
+      - name: Return generated reports to the runner account
+        if: always()
+        run: |
+          if [ -d build ]; then
+            sudo chown -R "$(id -u):$(id -g)" build
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
